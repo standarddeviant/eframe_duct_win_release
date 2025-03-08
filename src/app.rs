@@ -7,6 +7,9 @@ pub struct TemplateApp {
 
     #[serde(skip)] // This how you opt-out of serialization of a field
     value: f32,
+
+    #[serde(skip)] // This how you opt-out of serialization of a field
+    rd: Option<duct::ReaderHandle>,
 }
 
 impl Default for TemplateApp {
@@ -15,6 +18,7 @@ impl Default for TemplateApp {
             // Example stuff:
             label: "Hello World!".to_owned(),
             value: 2.7,
+            rd: None,
         }
     }
 }
@@ -67,24 +71,49 @@ impl eframe::App for TemplateApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             // The central panel the region left after adding TopPanel's and SidePanel's
-            ui.heading("eframe template");
+            ui.heading("eframe-duct-win-release");
 
-            ui.horizontal(|ui| {
-                ui.label("Write something: ");
-                ui.text_edit_singleline(&mut self.label);
-            });
-
-            ui.add(egui::Slider::new(&mut self.value, 0.0..=10.0).text("value"));
-            if ui.button("Increment").clicked() {
-                self.value += 1.0;
-            }
+            match &self.rd {
+                Some(rd) => {
+                    match rd.try_wait() {
+                        Ok(Some(_good)) => {
+                            ui.label(format!("proc output = {_good:?}"));
+                            if ui.button("Click to reset process output").clicked() {
+                                self.rd = None;
+                            }
+                        }
+                        Ok(None) => {
+                            ui.label("Waiting for process to end...");
+                            // NOTE: we call this request_repaint here so while we scan
+                            // we can immediately respond to the scanning process exit
+                            // per https://github.com/emilk/egui/discussions/342
+                            ui.ctx().request_repaint();
+ 
+                        }
+                        Err(_bad) => {
+                            ui.label("hmm..\n{_bad}");
+                        }
+                    }
+                    //
+                }
+                None => {
+                    if ui.button("Click to start background process").clicked() {
+                        let cmd = duct::cmd!("sleep", "5");
+                        // lazily convert the result to option
+                        self.rd = match cmd.reader() {
+                            Ok(_good) => Some(_good),
+                            Err(_good) => None
+                        };
+                    }
+                }
+            };
 
             ui.separator();
 
-            ui.add(egui::github_link_file!(
-                "https://github.com/emilk/eframe_template/blob/main/",
-                "Source code."
-            ));
+            // ui.add(egui::github_link_file!(
+            //     "https://github.com/emilk/eframe_template/blob/main/",
+            //     "Source code."
+            // ));
 
             ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                 powered_by_egui_and_eframe(ui);
